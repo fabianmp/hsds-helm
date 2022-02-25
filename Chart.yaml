@@ -1,0 +1,16 @@
+apiVersion: v2
+name: hsds
+description: A Helm chart for [HSDS](https://github.com/HDFGroup/hsds)
+type: application
+version: 0.1.0
+appVersion: "v0.6.3"
+home: https://github.com/HDFGroup/hsds
+sources:
+  - https://github.com/fabianmp/hsds-helm
+maintainers:
+  - name: Fabian Zach
+    email: fabian.zach@methodpark.de
+    url: https://github.com/fabianmp
+keywords:
+  - HSDS
+  - HDF5

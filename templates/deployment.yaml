@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hsds.fullname" . }}
+  labels:
+    app: hsds
+    {{- include "hsds.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hsds.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
+        {{- if or .Values.config.passwd .Values.config.groups }}
+        checksum/access: {{ include (print $.Template.BasePath "/secret-access-control.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/component: service-node
+        app: hsds
+        {{- include "hsds.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "hsds.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: service-node
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          - name: NODE_TYPE
+            value: sn
+          - name: K8S_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          {{- if .Values.accessControl.users }}
+          - name: PASSWORD_FILE
+            value: /config/passwd.txt
+          {{- else }}
+          - name: PASSWORD_FILE
+            value: ""
+          {{- end }}
+          {{- if .Values.accessControl.groups }}
+          - name: GROUPS_FILE
+            value: /config/groups.txt
+          {{- else }}
+          - name: GROUPS_FILE
+            value: ""
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 5101
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: http
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /about
+              port: http
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.serviceNode | nindent 12 }}
+          volumeMounts:
+          - name: config
+            subPath: override.sn.yml
+            mountPath: /config/override.yml
+            readOnly: true
+          {{- if .Values.accessControl.users }}
+          - name: access-control
+            subPath: passwd
+            mountPath: /config/passwd.txt
+            readOnly: true
+          {{- end }}
+          {{- if .Values.accessControl.groups }}
+          - name: access-control
+            subPath: groups
+            mountPath: /config/groups.txt
+            readOnly: true
+          {{- end }}
+        - name: data-node
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          - name: NODE_TYPE
+            value: dn
+          - name: K8S_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 6101
+              protocol: TCP
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/usr/bin/curl", "-X", "DELETE", "http://127.0.0.1:6101/prestop"]
+          livenessProbe:
+            tcpSocket:
+              port: http
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /about
+              port: http
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources.dataNode | nindent 12 }}
+          volumeMounts:
+          - name: config
+            subPath: override.dn.yml
+            mountPath: /config/override.yml
+            readOnly: true
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+      - name: config
+        secret:
+          secretName: {{ .Release.Name }}-config
+      {{- if or .Values.accessControl.users .Values.accessControl.groups }}
+      - name: access-control
+        secret:
+          secretName: {{ .Release.Name }}-access-control
+      {{- end }}
