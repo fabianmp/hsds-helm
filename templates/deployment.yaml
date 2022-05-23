@@ -14,7 +14,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
-        {{- if or .Values.config.passwd .Values.config.groups }}
+        {{- if or .Values.accessControl.users .Values.accessControl.groups }}
         checksum/access: {{ include (print $.Template.BasePath "/secret-access-control.yaml") . | sha256sum }}
         {{- end }}
         {{- with .Values.podAnnotations }}
